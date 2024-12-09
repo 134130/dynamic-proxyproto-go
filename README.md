@@ -10,3 +10,9 @@ This project is another implementation of [github.com/pires/go-proxyproto](https
 - IPv4/IPv6
 - **Dynamic PROXY protocol listener (accepts both PROXY and non-PROXY connections)**
   - The main difference between this project and [go-proxyproto](https://github.com/pires/go-proxyproto).
+
+## Benchmark
+
+```shell
+go test -bench=. -benchtime=2000x -gcflags='-m -m'
+```

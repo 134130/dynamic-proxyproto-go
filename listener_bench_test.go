@@ -1,12 +1,15 @@
 package dynamic_pp
 
 import (
-	"github.com/pires/go-proxyproto"
 	"net"
 	"testing"
+
+	"github.com/pires/go-proxyproto"
 )
 
 func benchmarkProxyProtocolListener(buffSize int, b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
 
 	header := &proxyproto.Header{
 		Version:           2,
@@ -30,52 +33,53 @@ func benchmarkProxyProtocolListener(buffSize int, b *testing.B) {
 	ppln := &DynamicPPListener{Listener: ln}
 	defer ppln.Close()
 
-	buff := make([]byte, buffSize)
+	for i := 0; i < b.N; i++ {
+		func() {
+			buff := make([]byte, buffSize)
 
-	b.ReportAllocs()
-	b.ResetTimer()
+			clientResult := make(chan error)
+			go func() {
+				defer close(clientResult)
 
-	clientResult := make(chan error)
-	go func() {
-		defer close(clientResult)
+				// Connect to the server
+				clientConn, err := net.Dial("tcp", ppln.Addr().String())
+				if err != nil {
+					clientResult <- err
+					return
+				}
+				defer clientConn.Close()
 
-		// Connect to the server
-		clientConn, err := net.Dial("tcp", ppln.Addr().String())
-		if err != nil {
-			clientResult <- err
-			return
-		}
-		defer clientConn.Close()
+				// Send the proxy protocol header
+				if _, err := header.WriteTo(clientConn); err != nil {
+					clientResult <- err
+					return
+				}
 
-		// Send the proxy protocol header
-		if _, err := header.WriteTo(clientConn); err != nil {
-			clientResult <- err
-			return
-		}
+				// Send some data
+				if _, err := clientConn.Write(buff); err != nil {
+					clientResult <- err
+					return
+				}
+			}()
 
-		// Send some data
-		if _, err := clientConn.Write(buff); err != nil {
-			clientResult <- err
-			return
-		}
-	}()
+			conn, err := ppln.Accept()
+			if err != nil {
+				b.Fatal(err)
+				return
+			}
+			defer conn.Close()
 
-	conn, err := ppln.Accept()
-	if err != nil {
-		b.Fatal(err)
-		return
-	}
-	defer conn.Close()
+			if _, err := conn.Read(buff); err != nil {
+				b.Fatal(err)
+				return
+			}
 
-	if _, err := conn.Read(buff); err != nil {
-		b.Fatal(err)
-		return
-	}
-
-	_ = conn.RemoteAddr()
-	if err = <-clientResult; err != nil {
-		b.Fatal(err)
-		return
+			_ = conn.RemoteAddr()
+			if err = <-clientResult; err != nil {
+				b.Fatal(err)
+				return
+			}
+		}()
 	}
 }
 
